@@ -1,56 +1,55 @@
-from enum import Enum, auto
+rom enum import Enum
 from datetime import datetime
 
-class TicketState(Enum):
-    porAtender = auto()
-    emAtendimento = auto()
-    atendido = auto()
-
-class AtendimentoState(Enum):
-    aberto = auto()
-    resolvido = auto()
-    naoResolvido = auto()
-
 class Ticket:
-    """
-    Base class for ticketes for common fields and state logic
-    """
-    def __init__(self, title: str, description: str):
-        self.id = None  # set by DB
+    class State(Enum):
+        porAtender = 1
+        emAtendimento = 2
+        Atendido = 3
+
+    class AtendimentoState(Enum):
+        aberto = 1
+        resolvido = 2
+        naoResolvido = 3
+
+    def __init__(self, title, description, creator, subtype):
+        self.id = None
         self.title = title
         self.description = description
-        self.created_at = datetime.now()
-        self.ticket_state = TicketState.porAtender
-        self.atendimento_state = AtendimentoState.aberto
+        self.creator = creator
+        self.subtype = subtype
+        self.ticket_state = Ticket.State.porAtender
+        self.atendimento_state = Ticket.AtendimentoState.aberto
+        self.assigned_to = None
+        self.attended_at = None
+        self.technician_notes = None
 
-    def can_open(self) -> bool:
-        """only tickets that are not atended can be opened"""
-        return self.ticket_state != TicketState.atendido
+    def open(self, technician):
+        if self.ticket_state != Ticket.State.porAtender:
+            raise ValueError("Ticket já foi atendido ou está em atendimento.")
+        self.assigned_to = technician
+        self.ticket_state = Ticket.State.emAtendimento
+        self.attended_at = datetime.now()
 
-    def open(self):
-        if not self.can_open():
-            raise ValueError("Ticket já atendido não pode ser reaberto.")
-        self.ticket_state = TicketState.emAtendimento
-
-    def close(self, resolved: bool = True):
-        self.ticket_state = TicketState.atendido
-        self.atendimento_state = AtendimentoState.resolvido if resolved else AtendimentoState.naoResolvido
+    def close(self, resolved: bool, notes: str):
+        if self.ticket_state != Ticket.State.emAtendimento:
+            raise ValueError("Ticket não está em atendimento.")
+        self.ticket_state = Ticket.State.Atendido
+        self.atendimento_state = (Ticket.AtendimentoState.resolvido
+                                  if resolved
+                                  else Ticket.AtendimentoState.naoResolvido)
+        self.technician_notes = notes
 
 class HardwareTicket(Ticket):
     """
-    Ticket subclass for hardware issues.
+    Para tickets de hardware (equipamento, avaria).
     """
-    def __init__(self, title: str, description: str, hardware_type: str):
-        super().__init__(title, description)
-        self.hardware_type = hardware_type
+    def __init__(self, title, description, creator, subtype):
+        super().__init__(title, description, creator, subtype)
 
 class SoftwareTicket(Ticket):
     """
-    Ticket subclass for software issues.
+    Para tickets de software (descrição de necessidade).
     """
-    def __init__(self, title: str, description: str, module: str):
-        super().__init__(title, description)
-        self.module = module
-```
-
----
+    def __init__(self, title, description, creator, subtype):
+        super().__init__(title, description, creator, subtype)

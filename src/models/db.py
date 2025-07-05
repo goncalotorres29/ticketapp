@@ -1,47 +1,82 @@
+# src/models/db.py
 import pyodbc
-from models.ticket import Ticket
+from datetime import datetime
 
 class Database:
     """
-    Simple DB manager for SQL Server.
+    Wraps pyodbc connection and provides methods for tickets.
     """
-    def __init__(self, server: str, database: str):
-        conn_str = (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-            f"SERVER={server};"
-            f"DATABASE={database};"
-            "Trusted_Connection=yes;"
+    def __init__(self,
+                 server: str = 'localhost\\SQLEXPRESS',
+                 database: str = 'ticketApp'):
+        self.conn_str = (
+            'DRIVER={ODBC Driver 18 for SQL Server};'
+            f'SERVER={server};'
+            f'DATABASE={database};'
+            'Trusted_Connection=yes;'
         )
-        self.conn = pyodbc.connect(conn_str)
+
+    def connect(self):
+        return pyodbc.connect(self.conn_str)
 
     def init_schema(self):
-        cursor = self.conn.cursor()
-        cursor.execute(open('scripts/init_db.sql').read())
-        self.conn.commit()
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                IF OBJECT_ID('dbo.tickets','U') IS NULL
+                CREATE TABLE dbo.tickets (
+                    id INT IDENTITY PRIMARY KEY,
+                    title VARCHAR(200) NOT NULL,
+                    description VARCHAR(MAX),
+                    creator VARCHAR(100) NOT NULL,
+                    type VARCHAR(50) NOT NULL,
+                    subtype VARCHAR(100),
+                    ticket_state VARCHAR(50) NOT NULL,
+                    atendimento_state VARCHAR(50) NOT NULL,
+                    assigned_to VARCHAR(100),
+                    attended_at DATETIME,
+                    technician_notes VARCHAR(MAX)
+                )
+            """)
+            conn.commit()
 
-    def save_ticket(self, ticket: Ticket):
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO tickets (title, description, ticket_state, atendimento_state, extra) VALUES (?, ?, ?, ?, ?) ",
-            ticket.title,
-            ticket.description,
-            ticket.ticket_state.name,
-            ticket.atendimento_state.name,
-            getattr(ticket, 'hardware_type', getattr(ticket, 'module', None))
-        )
-        self.conn.commit()
-        ticket.id = cursor.execute("SELECT @@IDENTITY").fetchval()
-        return ticket.id
+    def save_ticket(self, ticket):
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO dbo.tickets
+                  (title, description, creator, type, subtype, ticket_state, atendimento_state)
+                VALUES (?,?,?,?,?,?,?)
+            """, ticket.title, ticket.description, ticket.creator,
+                 ticket.__class__.__name__, ticket.subtype,
+                 ticket.ticket_state.name, ticket.atendimento_state.name)
+            conn.commit()
+            return cur.execute("SELECT @@IDENTITY").fetchval()
 
-    def list_tickets(self):
-        cursor = self.conn.cursor()
-        rows = cursor.execute("SELECT id, title, ticket_state, atendimento_state, extra FROM tickets").fetchall()
-        return rows
+    def list_tickets(self, creator=None):
+        with self.connect() as conn:
+            cur = conn.cursor()
+            if creator:
+                cur.execute("SELECT * FROM dbo.tickets WHERE creator=?", creator)
+            else:
+                cur.execute("SELECT * FROM dbo.tickets")
+            return cur.fetchall()
 
-    def get_ticket(self, ticket_id: int):
-        cursor = self.conn.cursor()
-        row = cursor.execute(
-            "SELECT id, title, description, ticket_state, atendimento_state, extra FROM tickets WHERE id = ?",
-            ticket_id
-        ).fetchone()
-        return row
+    def get_ticket(self, ticket_id):
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM dbo.tickets WHERE id=?", ticket_id)
+            return cur.fetchone()
+
+    def update_ticket(self, ticket):
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE dbo.tickets
+                SET ticket_state=?, atendimento_state=?,
+                    assigned_to=?, attended_at=?, technician_notes=?
+                WHERE id=?
+            """, ticket.ticket_state.name, ticket.atendimento_state.name,
+                 ticket.assigned_to, ticket.attended_at, ticket.technician_notes,
+                 ticket.id)
+            conn.commit()
